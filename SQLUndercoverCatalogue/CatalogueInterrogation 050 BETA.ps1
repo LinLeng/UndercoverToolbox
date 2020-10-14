@@ -26,7 +26,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #>
 
 #configuration variables, change these to suit your setup
-$ConfigServer = "<central server>"
+$ConfigServer = "LAPTOP-FOWLERD\SQL2017_3"
 $SQLUndercoverDatabase = "SQLUndercover"
 
 $ScriptVersion = "0.5.0"
@@ -313,32 +313,41 @@ ForEach ($instance in $Instances.Tables[0].Rows)
             }
 
             $StageTableName = $row.ItemArray[3].ToString()
+            $PSModule = $row.ItemArray[11]
             #process module
             #Run the get procedure against remote instance
 
-            $ModuleData = New-Object System.Data.DataSet
-            $ModuleQuery = $GetModuleCode
-            $ModuleDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter ($ModuleQuery, $RemoteConn)
-            $ModuleDataAdapter.Fill($ModuleData)
-            #$DataSet = Invoke-DbaQuery -SQLInstance $instance.ItemArray[0].ToString() -Query $GetModuleCode -As DataSet
-            
-            #insert data from get procedure into staging table on central server
-            #Write-DbaDataTable -SqlInstance $ConfigServer -InputObject $DataSet.Tables[0] -Database $SQLUndercoverDatabase -Schema "Catalogue" -Table $StageTableName -Truncate -confirm:$false
-            $ModuleBulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($ConfigConn)
-            $ModuleBulkCopy.DestinationTableName = "Catalogue.$StageTableName"
-
-            if ($ConfigConn.State -eq "Closed")
+            if ($PSModule) #if module is a PS module
             {
-                $ConfigConn.Open()
+                Write-Host "   Module type: PowerShell" -ForegroundColor Yellow
             }
+            else #if module is a SQL module
+            {
+                Write-Host "   Module type: SQL" -ForegroundColor Yellow
 
-            Invoke-Sqlcmd -ServerInstance $ConfigServer -Database $SQLUndercoverDatabase -Query "TRUNCATE TABLE Catalogue.$StageTableName"
-            $ModuleBulkCopy.WriteToServer($ModuleData.Tables[0])
-            $ConfigConn.Close()
+                $ModuleData = New-Object System.Data.DataSet
+                $ModuleQuery = $GetModuleCode
+                $ModuleDataAdapter = New-Object System.Data.SqlClient.SqlDataAdapter ($ModuleQuery, $RemoteConn)
+                $ModuleDataAdapter.Fill($ModuleData)
+                #$DataSet = Invoke-DbaQuery -SQLInstance $instance.ItemArray[0].ToString() -Query $GetModuleCode -As DataSet
+            
+                #insert data from get procedure into staging table on central server
+                #Write-DbaDataTable -SqlInstance $ConfigServer -InputObject $DataSet.Tables[0] -Database $SQLUndercoverDatabase -Schema "Catalogue" -Table $StageTableName -Truncate -confirm:$false
+                $ModuleBulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($ConfigConn)
+                $ModuleBulkCopy.DestinationTableName = "Catalogue.$StageTableName"
 
-            #run the update procedure on the central server
-            Invoke-Sqlcmd -ServerInstance $ConfigServer -Database $SQLUndercoverDatabase -Query $UpdateModuleCode
+                if ($ConfigConn.State -eq "Closed")
+                {
+                    $ConfigConn.Open()
+                }
 
+                Invoke-Sqlcmd -ServerInstance $ConfigServer -Database $SQLUndercoverDatabase -Query "TRUNCATE TABLE Catalogue.$StageTableName"
+                $ModuleBulkCopy.WriteToServer($ModuleData.Tables[0])
+                $ConfigConn.Close()
+
+                #run the update procedure on the central server
+                Invoke-Sqlcmd -ServerInstance $ConfigServer -Database $SQLUndercoverDatabase -Query $UpdateModuleCode
+            }
         }
     }
     catch
